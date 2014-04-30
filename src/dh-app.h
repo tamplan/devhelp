@@ -21,7 +21,7 @@
 
 #include <gtk/gtk.h>
 
-#include "dh-book-manager.h"
+#include "dh-profile.h"
 
 G_BEGIN_DECLS
 
@@ -47,7 +47,7 @@ GType dh_app_get_type (void) G_GNUC_CONST;
 
 DhApp         *dh_app_new               (void);
 
-DhBookManager *dh_app_peek_book_manager (DhApp *self);
+DhProfile     *dh_app_peek_profile      (DhApp *self);
 GtkWindow     *dh_app_peek_first_window (DhApp *self);
 GtkWindow     *dh_app_peek_assistant    (DhApp *self);
 

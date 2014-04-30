@@ -25,19 +25,23 @@
 
 #include "devhelp.h"
 #include "dh-app.h"
+#include "dh-profile.h"
 #include "dh-preferences.h"
 #include "dh-util.h"
 
 typedef struct {
-        DhBookManager *book_manager;
+        /* Local profile, always available */
+        DhProfile *local;
+        /* Currently selected profile */
+        DhProfile *current;
 } DhAppPrivate;
 
 G_DEFINE_TYPE_WITH_PRIVATE (DhApp, dh_app, GTK_TYPE_APPLICATION);
 
 /******************************************************************************/
 
-DhBookManager *
-dh_app_peek_book_manager (DhApp *app)
+DhProfile *
+dh_app_peek_profile (DhApp *app)
 {
         DhAppPrivate *priv;
 
@@ -45,7 +49,7 @@ dh_app_peek_book_manager (DhApp *app)
 
         priv = dh_app_get_instance_private (app);
 
-        return priv->book_manager;
+        return priv->current;
 }
 
 GtkWindow *
@@ -373,9 +377,16 @@ dh_app_startup (GApplication *application)
         /* Setup accelerators */
         setup_accelerators (app);
 
-        /* Load the book manager */
-        priv->book_manager = dh_book_manager_new ();
-        dh_book_manager_populate (priv->book_manager);
+        /* Load the local profile */
+        priv->local = dh_profile_new (_("Local"), g_get_system_data_dirs ());
+
+        /* TODO: when mutiple profiles available, look for the last used one and
+         * mark it as current */
+
+        if (!priv->current) {
+                priv->current = g_object_ref (priv->local);
+                dh_profile_populate (priv->current);
+        }
 }
 
 /******************************************************************************/
@@ -405,7 +416,8 @@ dh_app_dispose (GObject *object)
         DhApp *app = DH_APP (object);
         DhAppPrivate *priv = dh_app_get_instance_private (app);
 
-        g_clear_object (&priv->book_manager);
+        g_clear_object (&priv->current);
+        g_clear_object (&priv->local);
 
         G_OBJECT_CLASS (dh_app_parent_class)->dispose (object);
 }

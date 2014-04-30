@@ -129,7 +129,7 @@ dh_assistant_new (DhApp *application)
 
         priv = dh_assistant_get_instance_private (DH_ASSISTANT (assistant));
         dh_assistant_view_set_book_manager (DH_ASSISTANT_VIEW (priv->view),
-                                            dh_app_peek_book_manager (application));
+                                            dh_profile_peek_book_manager (dh_app_peek_profile (application)));
 
         return assistant;
 }

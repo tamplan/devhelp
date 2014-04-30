@@ -45,7 +45,8 @@ struct _DhBookManagerClass {
 
 GType          dh_book_manager_get_type              (void) G_GNUC_CONST;
 DhBookManager *dh_book_manager_new                   (void);
-void           dh_book_manager_populate              (DhBookManager *book_manager);
+void           dh_book_manager_populate              (DhBookManager *book_manager,
+                                                      const gchar   *path);
 GList         *dh_book_manager_get_books             (DhBookManager *book_manager);
 GList         *dh_book_manager_get_languages         (DhBookManager *book_manager);
 

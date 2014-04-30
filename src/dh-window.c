@@ -664,7 +664,7 @@ window_populate (DhWindow *window)
         const char *prev_icon, *next_icon;
 
         priv = dh_window_get_instance_private (window);
-        book_manager = dh_app_peek_book_manager (DH_APP (gtk_window_get_application (GTK_WINDOW (window))));
+        book_manager = dh_profile_peek_book_manager (dh_app_peek_profile (DH_APP (gtk_window_get_application (GTK_WINDOW (window)))));
 
         if (gtk_widget_get_direction (GTK_WIDGET (window)) == GTK_TEXT_DIR_RTL) {
                 prev_icon = "go-previous-rtl-symbolic";
@@ -746,7 +746,7 @@ find_library_equivalent (DhWindow    *window,
         book_id = components[4];
         filename = components[6];
 
-        book_manager = dh_app_peek_book_manager (DH_APP (gtk_window_get_application (GTK_WINDOW (window))));
+        book_manager = dh_profile_peek_book_manager (dh_app_peek_profile (DH_APP (gtk_window_get_application (GTK_WINDOW (window)))));
 
         /* use list pointer to iterate */
         for (books = dh_book_manager_get_books (book_manager);

@@ -329,19 +329,10 @@ book_manager_add_books_in_data_dir (DhBookManager *book_manager,
 }
 
 void
-dh_book_manager_populate (DhBookManager *book_manager)
+dh_book_manager_populate (DhBookManager *book_manager,
+                          const gchar   *path)
 {
-        const gchar * const * system_dirs;
-
-        book_manager_add_books_in_data_dir (book_manager,
-                                            g_get_user_data_dir ());
-
-        system_dirs = g_get_system_data_dirs ();
-        while (*system_dirs) {
-                book_manager_add_books_in_data_dir (book_manager,
-                                                    *system_dirs);
-                system_dirs++;
-        }
+        book_manager_add_books_in_data_dir (book_manager, path);
 }
 
 static gchar *

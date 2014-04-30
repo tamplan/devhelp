@@ -625,7 +625,7 @@ dh_preferences_init (DhPreferences *prefs)
         app = g_application_get_default ();
 
         priv->settings = dh_settings_get ();
-        priv->book_manager = g_object_ref (dh_app_peek_book_manager (DH_APP (app)));
+        priv->book_manager = g_object_ref (dh_profile_peek_book_manager (dh_app_peek_profile (DH_APP (app))));
         priv->book_created_id = g_signal_connect (priv->book_manager,
                                                   "book-created",
                                                   G_CALLBACK (preferences_bookshelf_book_created_cb),
