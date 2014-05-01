@@ -21,6 +21,7 @@
 
 #include "config.h"
 
+#include <sys/stat.h>
 #include <glib/gi18n.h>
 
 #include "devhelp.h"
@@ -30,13 +31,13 @@
 #include "dh-util.h"
 
 typedef struct {
-        /* Local profile, always available */
-        DhProfile *local;
+        /* List of available rofiles */
+        GList *profiles;
         /* Currently selected profile */
         DhProfile *current;
 } DhAppPrivate;
 
-G_DEFINE_TYPE_WITH_PRIVATE (DhApp, dh_app, GTK_TYPE_APPLICATION);
+G_DEFINE_TYPE_WITH_PRIVATE (DhApp, dh_app, GTK_TYPE_APPLICATION)
 
 /******************************************************************************/
 
@@ -189,6 +190,33 @@ preferences_cb (GSimpleAction *action,
         dh_preferences_show_dialog (window);
 }
 
+static  void
+profile_switch_cb (GSimpleAction *action,
+                   GVariant      *value,
+                   gpointer       user_data)
+{
+        DhAppPrivate *priv;
+        const gchar *str;
+        GList *l;
+
+        priv = dh_app_get_instance_private (DH_APP (user_data));
+        str = g_variant_get_string (value, NULL);
+
+        g_clear_object (&priv->current);
+
+        for (l = priv->profiles; l; l = g_list_next (l)) {
+                if (g_str_equal (str, dh_profile_get_id (DH_PROFILE (l->data)))) {
+                        g_message ("Switching profile to: %s", dh_profile_get_id (DH_PROFILE (l->data)));
+                        priv->current = g_object_ref (l->data);
+                        break;
+                }
+        }
+
+        g_assert (priv->current);
+        dh_profile_populate (priv->current);
+        g_simple_action_set_state (action, value);
+}
+
 static void
 about_cb (GSimpleAction *action,
           GVariant      *parameter,
@@ -309,6 +337,7 @@ static GActionEntry app_entries[] = {
         { "preferences",      preferences_cb,      NULL, NULL, NULL },
         { "about",            about_cb,            NULL, NULL, NULL },
         { "quit",             quit_cb,             NULL, NULL, NULL },
+        { "switch-profile",   NULL,                "s",  "'local'", profile_switch_cb },
         /* additional commandline-specific actions */
         { "search",           search_cb,           "s",  NULL, NULL },
         { "search-assistant", search_assistant_cb, "s",  NULL, NULL },
@@ -338,6 +367,113 @@ setup_accelerators (DhApp *self)
 /******************************************************************************/
 
 static void
+store_profile (DhApp     *app,
+               DhProfile *profile)
+{
+        DhAppPrivate *priv = dh_app_get_instance_private (app);
+
+        g_message ("Profile '%s' (%s) added", dh_profile_get_id (profile), dh_profile_get_name (profile));
+        priv->profiles = g_list_append (priv->profiles, g_object_ref (profile));
+}
+
+static void
+load_profiles (DhApp *app)
+{
+        GDir *dir;
+        gchar *profiles_path;
+        gchar *profiles_path_printable;
+        const gchar *name;
+        GError *error = NULL;
+        DhProfile *profile;
+
+        /* Load the local profile */
+        profile = dh_profile_new ("local", _("Local"), g_get_system_data_dirs ());
+        store_profile (app, profile);
+        g_object_unref (profile);
+
+        profiles_path = g_build_filename (g_get_user_data_dir (), PACKAGE_TARNAME, "profiles", NULL);
+        profiles_path_printable = g_filename_to_utf8 (profiles_path, -1, NULL, NULL, NULL);
+
+        /* Open directory */
+        dir = g_dir_open (profiles_path, 0, &error);
+        if (!dir) {
+                g_message ("cannot open profiles directory '%s': %s", profiles_path_printable, error->message);
+                g_error_free (error);
+
+                if (g_mkdir_with_parents (profiles_path, S_IRWXU | S_IRWXG) < 0) {
+                        g_warning ("cannot create profiles directory '%s'", profiles_path_printable);
+                        goto out;
+                }
+
+                g_message ("profiles directory created '%s'", profiles_path_printable);
+
+                dir = g_dir_open (profiles_path, 0, &error);
+                if (!dir) {
+                        g_warning ("cannot open newly created profiles directory '%s': %s", profiles_path_printable, error->message);
+                        g_error_free (error);
+                        goto out;
+                }
+        } else
+                g_message ("profiles directory available: %s", profiles_path);
+
+        /* And iterate it */
+        while ((name = g_dir_read_name (dir)) != NULL) {
+                gchar *profile_dir_path;
+                gchar *profile_dir_path_printable;
+                gchar *profile_name_path;
+                gchar *profile_name_path_printable;
+                GFile *profile_name_file;
+                gchar *profile_name = NULL;
+
+                /* Build the path of the directory where the final
+                 * devhelp profile resides */
+                profile_dir_path = g_build_filename (profiles_path, name, NULL);
+                profile_dir_path_printable = g_filename_to_utf8 (profile_dir_path, -1, NULL, NULL, NULL);
+                profile_name_path = g_build_filename (profile_dir_path, "name", NULL);
+                profile_name_path_printable = g_filename_to_utf8 (profile_name_path, -1, NULL, NULL, NULL);
+                profile_name_file = g_file_new_for_path (profile_name_path);
+
+                if (!g_file_load_contents (profile_name_file,
+                                           NULL,
+                                           &profile_name,
+                                           NULL,
+                                           NULL,
+                                           &error)) {
+                        g_warning ("cannot load profile contents from '%s': %s", profile_name_path_printable, error->message);
+                        g_clear_error (&error);
+                } else {
+                        gchar **split;
+                        gchar *paths[2];
+
+                        paths[0] = profile_dir_path;
+                        paths[1] = NULL;
+
+                        split = g_strsplit (profile_name, ",", -1);
+                        if (split[0] && split[1]) {
+                                profile = dh_profile_new (split[0], split[1], (const gchar *const *)paths);
+                                store_profile (app, profile);
+                                g_object_unref (profile);
+                        } else {
+                                g_warning ("Profile name file content unusable: '%s'", profile_name);
+                        }
+                        g_strfreev (split);
+                }
+
+                g_free (profile_name);
+                g_free (profile_dir_path);
+                g_free (profile_dir_path_printable);
+                g_free (profile_name_path);
+                g_free (profile_name_path_printable);
+                g_object_unref (profile_name_file);
+        }
+
+        g_dir_close (dir);
+
+out:
+        g_free (profiles_path);
+}
+
+static void
 dh_app_startup (GApplication *application)
 {
         DhApp *app = DH_APP (application);
@@ -351,6 +487,10 @@ dh_app_startup (GApplication *application)
                                          app_entries, G_N_ELEMENTS (app_entries),
                                          app);
 
+        /* Load profiles */
+        load_profiles (app);
+
+        /* Setup app menu */
         if (_dh_app_has_app_menu (app)) {
                 GtkBuilder *builder;
                 GError *error = NULL;
@@ -365,10 +505,25 @@ dh_app_startup (GApplication *application)
                         g_error_free (error);
                 } else {
                         GMenuModel *app_menu;
+                        GMenu *submenu;
+                        GList *l;
 
                         app_menu = G_MENU_MODEL (gtk_builder_get_object (builder, "app-menu"));
-                        gtk_application_set_app_menu (GTK_APPLICATION (application),
-                                                      app_menu);
+                        gtk_application_set_app_menu (GTK_APPLICATION (application), app_menu);
+
+                        /* Create Profiles submenu */
+                        submenu = g_menu_new ();
+                        g_menu_insert_submenu (G_MENU (app_menu), 0, _("Profiles"), G_MENU_MODEL (submenu));
+
+                        for (l = priv->profiles; l; l = g_list_next (l)) {
+                                DhProfile *profile;
+                                gchar *action_name;
+
+                                profile = DH_PROFILE (l->data);
+                                action_name = g_strdup_printf ("app.switch-profile::%s", dh_profile_get_id (profile));
+                                g_menu_append (submenu, dh_profile_get_name (profile), action_name);
+                                g_free (action_name);
+                        }
                 }
 
                 g_object_unref (builder);
@@ -377,16 +532,7 @@ dh_app_startup (GApplication *application)
         /* Setup accelerators */
         setup_accelerators (app);
 
-        /* Load the local profile */
-        priv->local = dh_profile_new (_("Local"), g_get_system_data_dirs ());
-
-        /* TODO: when mutiple profiles available, look for the last used one and
-         * mark it as current */
-
-        if (!priv->current) {
-                priv->current = g_object_ref (priv->local);
-                dh_profile_populate (priv->current);
-        }
+        g_action_group_activate_action (G_ACTION_GROUP (app), "switch-profile", g_variant_new_string ("local"));
 }
 
 /******************************************************************************/
@@ -417,7 +563,10 @@ dh_app_dispose (GObject *object)
         DhAppPrivate *priv = dh_app_get_instance_private (app);
 
         g_clear_object (&priv->current);
-        g_clear_object (&priv->local);
+        if (priv->profiles) {
+                g_list_free_full (priv->profiles, g_object_unref);
+                priv->profiles = NULL;
+        }
 
         G_OBJECT_CLASS (dh_app_parent_class)->dispose (object);
 }
