@@ -26,6 +26,7 @@
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 
+#include "dh-profile.h"
 #include "dh-book-manager.h"
 #include "dh-book.h"
 #include "dh-sidebar.h"
@@ -38,6 +39,8 @@
 #define TAB_WIDTH_N_CHARS 15
 
 typedef struct {
+        DhProfile      *current;
+
         GMenuModel     *gear_app_menu;
         GtkWidget      *hpaned;
         GtkWidget      *sidebar;
@@ -59,6 +62,11 @@ typedef struct {
         DhSettings     *settings;
         guint           fonts_changed_id;
 } DhWindowPrivate;
+
+enum {
+        PROP_0,
+        PROP_CURRENT_PROFILE,
+};
 
 enum {
         OPEN_LINK,
@@ -140,6 +148,7 @@ static void           window_tab_set_title           (DhWindow        *window,
 static void           window_close_tab               (DhWindow *window,
                                                       gint      page_num);
 static gboolean       do_search                      (DhWindow *window);
+static void           update_sidebar                 (DhWindow *window);
 
 G_DEFINE_TYPE_WITH_PRIVATE (DhWindow, dh_window, GTK_TYPE_APPLICATION_WINDOW);
 
@@ -553,6 +562,50 @@ dh_window_init (DhWindow *window)
 }
 
 static void
+dh_window_set_property (GObject      *object,
+                        guint         prop_id,
+                        const GValue *value,
+                        GParamSpec   *pspec)
+{
+        DhWindowPrivate *priv;
+
+        priv = dh_window_get_instance_private (DH_WINDOW (object));
+
+        switch (prop_id)
+        {
+        case PROP_CURRENT_PROFILE:
+                g_clear_object (&priv->current);
+                priv->current = g_value_dup_object (value);
+                update_sidebar (DH_WINDOW (object));
+                break;
+        default:
+                G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+                break;
+        }
+}
+
+static void
+dh_window_get_property (GObject    *object,
+                        guint       prop_id,
+                        GValue     *value,
+                        GParamSpec *pspec)
+{
+        DhWindowPrivate *priv;
+
+        priv = dh_window_get_instance_private (DH_WINDOW (object));
+
+        switch (prop_id)
+        {
+        case PROP_CURRENT_PROFILE:
+                g_value_set_object (value, priv->current);
+                break;
+        default:
+                G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+                break;
+        }
+}
+
+static void
 dh_window_dispose (GObject *object)
 {
         DhWindow *window = DH_WINDOW (object);
@@ -579,6 +632,8 @@ dh_window_class_init (DhWindowClass *klass)
         GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
 
         object_class->dispose = dh_window_dispose;
+        object_class->set_property = dh_window_set_property;
+        object_class->get_property = dh_window_get_property;
 
         signals[OPEN_LINK] =
                 g_signal_new ("open-link",
@@ -591,6 +646,17 @@ dh_window_class_init (DhWindowClass *klass)
                               2,
                               G_TYPE_STRING,
                               DH_TYPE_OPEN_LINK_FLAGS);
+
+        g_object_class_install_property (object_class,
+                                         PROP_CURRENT_PROFILE,
+                                         g_param_spec_object ("current-profile",
+                                                              "Current profile",
+                                                              "Profile currently being used",
+                                                              DH_TYPE_PROFILE,
+                                                              (G_PARAM_READWRITE |
+                                                               G_PARAM_STATIC_NAME |
+                                                               G_PARAM_STATIC_NICK |
+                                                               G_PARAM_STATIC_BLURB)));
 
         /* Bind class to template */
         gtk_widget_class_set_template_from_resource (widget_class,
@@ -657,14 +723,34 @@ window_web_view_switch_page_after_cb (GtkNotebook     *notebook,
 }
 
 static void
+update_sidebar (DhWindow *window)
+{
+        DhWindowPrivate *priv;
+
+        priv = dh_window_get_instance_private (window);
+
+        if (priv->sidebar)
+                gtk_container_remove (GTK_CONTAINER (priv->grid_sidebar), priv->sidebar);
+
+        /* Sidebar */
+        priv->sidebar = dh_sidebar_new (priv->current ? dh_profile_peek_book_manager (priv->current) : NULL);
+        gtk_widget_set_vexpand (priv->sidebar, TRUE);
+        gtk_widget_set_hexpand (priv->sidebar, TRUE);
+        gtk_widget_show (priv->sidebar);
+        gtk_container_add (GTK_CONTAINER (priv->grid_sidebar), priv->sidebar);
+        g_signal_connect (priv->sidebar,
+                          "link-selected",
+                          G_CALLBACK (window_search_link_selected_cb),
+                          window);
+}
+
+static void
 window_populate (DhWindow *window)
 {
         DhWindowPrivate *priv;
-        DhBookManager *book_manager;
         const char *prev_icon, *next_icon;
 
         priv = dh_window_get_instance_private (window);
-        book_manager = dh_profile_peek_book_manager (dh_app_peek_profile (DH_APP (gtk_window_get_application (GTK_WINDOW (window)))));
 
         if (gtk_widget_get_direction (GTK_WIDGET (window)) == GTK_TEXT_DIR_RTL) {
                 prev_icon = "go-previous-rtl-symbolic";
@@ -678,15 +764,7 @@ window_populate (DhWindow *window)
         gtk_image_set_from_icon_name (priv->forward_button_image, next_icon, GTK_ICON_SIZE_MENU);
 
         /* Sidebar */
-        priv->sidebar = dh_sidebar_new (book_manager);
-        gtk_widget_set_vexpand (priv->sidebar, TRUE);
-        gtk_widget_set_hexpand (priv->sidebar, TRUE);
-        gtk_widget_show (priv->sidebar);
-        gtk_container_add (GTK_CONTAINER (priv->grid_sidebar), priv->sidebar);
-        g_signal_connect (priv->sidebar,
-                          "link-selected",
-                          G_CALLBACK (window_search_link_selected_cb),
-                          window);
+        update_sidebar (window);
 
         /* HTML tabs notebook. */
         g_signal_connect (priv->notebook,
@@ -1333,6 +1411,11 @@ dh_window_new (DhApp *application)
         DhWindowPrivate *priv;
 
         window = g_object_new (DH_TYPE_WINDOW, "application", application, NULL);
+
+        g_object_bind_property (application, "current-profile",
+                                window,      "current-profile",
+                                G_BINDING_SYNC_CREATE);
+
         priv = dh_window_get_instance_private (window);
 
         window_populate (window);

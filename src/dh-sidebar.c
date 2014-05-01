@@ -608,6 +608,9 @@ dh_sidebar_constructed (GObject *object)
         DhSidebarPrivate *priv = dh_sidebar_get_instance_private (sidebar);
 
         /* Setup book manager */
+        if (!priv->book_manager)
+                return;
+
         g_signal_connect (priv->book_manager,
                           "book-created",
                           G_CALLBACK (sidebar_book_created_or_enabled_cb),
