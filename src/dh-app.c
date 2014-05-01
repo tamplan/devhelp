@@ -37,6 +37,11 @@ typedef struct {
         DhProfile *current;
 } DhAppPrivate;
 
+enum {
+        PROP_0,
+        PROP_CURRENT_PROFILE,
+};
+
 G_DEFINE_TYPE_WITH_PRIVATE (DhApp, dh_app, GTK_TYPE_APPLICATION)
 
 /******************************************************************************/
@@ -195,25 +200,26 @@ profile_switch_cb (GSimpleAction *action,
                    GVariant      *value,
                    gpointer       user_data)
 {
+        DhApp *app = DH_APP (user_data);
         DhAppPrivate *priv;
         const gchar *str;
         GList *l;
+        DhProfile *target = NULL;
 
-        priv = dh_app_get_instance_private (DH_APP (user_data));
+        priv = dh_app_get_instance_private (app);
         str = g_variant_get_string (value, NULL);
-
-        g_clear_object (&priv->current);
 
         for (l = priv->profiles; l; l = g_list_next (l)) {
                 if (g_str_equal (str, dh_profile_get_id (DH_PROFILE (l->data)))) {
-                        g_message ("Switching profile to: %s", dh_profile_get_id (DH_PROFILE (l->data)));
-                        priv->current = g_object_ref (l->data);
+                        target = DH_PROFILE (l->data);
                         break;
                 }
         }
 
-        g_assert (priv->current);
-        dh_profile_populate (priv->current);
+        g_assert (target);
+        g_message ("Switching profile to: %s", dh_profile_get_id (target));
+        g_object_set (app, "current-profile", target, NULL);
+
         g_simple_action_set_state (action, value);
 }
 
@@ -557,6 +563,50 @@ dh_app_init (DhApp *app)
 }
 
 static void
+dh_app_set_property (GObject      *object,
+                     guint         prop_id,
+                     const GValue *value,
+                     GParamSpec   *pspec)
+{
+        DhAppPrivate *priv;
+
+        priv = dh_app_get_instance_private (DH_APP (object));
+
+        switch (prop_id)
+        {
+        case PROP_CURRENT_PROFILE:
+                g_clear_object (&priv->current);
+                priv->current = g_value_dup_object (value);
+                dh_profile_populate (priv->current);
+                break;
+        default:
+                G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+                break;
+        }
+}
+
+static void
+dh_app_get_property (GObject    *object,
+                         guint       prop_id,
+                         GValue     *value,
+                         GParamSpec *pspec)
+{
+        DhAppPrivate *priv;
+
+        priv = dh_app_get_instance_private (DH_APP (object));
+
+        switch (prop_id)
+        {
+        case PROP_CURRENT_PROFILE:
+                g_value_set_object (value, priv->current);
+                break;
+        default:
+                G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+                break;
+        }
+}
+
+static void
 dh_app_dispose (GObject *object)
 {
         DhApp *app = DH_APP (object);
@@ -580,4 +630,17 @@ dh_app_class_init (DhAppClass *klass)
         application_class->startup = dh_app_startup;
 
         object_class->dispose = dh_app_dispose;
+        object_class->set_property = dh_app_set_property;
+        object_class->get_property = dh_app_get_property;
+
+        g_object_class_install_property (object_class,
+                                         PROP_CURRENT_PROFILE,
+                                         g_param_spec_object ("current-profile",
+                                                              "Current profile",
+                                                              "Profile currently being used",
+                                                              DH_TYPE_PROFILE,
+                                                              (G_PARAM_READWRITE |
+                                                               G_PARAM_STATIC_NAME |
+                                                               G_PARAM_STATIC_NICK |
+                                                               G_PARAM_STATIC_BLURB)));
 }
