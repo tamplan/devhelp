@@ -29,13 +29,13 @@ dh_init (void)
         static gboolean done = FALSE;
 
         if (!done) {
-                WebKitWebContext *webkit_context;
+//                WebKitWebContext *webkit_context;
 
                 bindtextdomain (GETTEXT_PACKAGE, LOCALEDIR);
                 bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
 
-                webkit_context = webkit_web_context_get_default ();
-                webkit_web_context_set_sandbox_enabled (webkit_context, TRUE);
+//                webkit_context = webkit_web_context_get_default ();
+//                webkit_web_context_set_sandbox_enabled (webkit_context, TRUE);
 
                 done = TRUE;
         }
